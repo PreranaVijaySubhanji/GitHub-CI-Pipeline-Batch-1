@@ -4,54 +4,101 @@ pipeline {
 
     options {
         timestamps()
+        skipDefaultCheckout(true)
+    }
+
+    environment {
+        APP_NAME = 'calculator'
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                echo 'Source repository is configured in Jenkins.'
+                checkout scm
+                echo 'Source code retrieved from GitHub.'
             }
         }
 
-        stage('Validate Source') {
+        stage('Environment Check') {
             steps {
                 sh '''
-                    echo "Checking required project files..."
-                    test -f README.md
-                    test -f Jenkinsfile
-                    echo "Validation successful."
+                    echo "Checking Python environment..."
+                    python3 --version
+                    echo "Application: $APP_NAME"
                 '''
             }
         }
 
-        stage('Build') {
+        stage('Unit Tests') {
             steps {
                 sh '''
-                    mkdir -p build
-                    echo "Jenkins CI Pipeline - Batch 1" > build/build-info.txt
-                    echo "Build artifact created."
-                    cat build/build-info.txt
+                    echo "Running automated unit tests..."
+                    python3 -m unittest discover -s tests -v
                 '''
             }
         }
 
-        stage('Archive Artifact') {
+        stage('Compile Check') {
             steps {
-                archiveArtifacts artifacts: 'build/build-info.txt',
-                                 fingerprint: true
+                sh '''
+                    echo "Checking Python source syntax..."
+                    python3 -m compileall -q app tests
+                    echo "Compile check passed."
+                '''
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh '''
+                    mkdir -p dist
+
+                    python3 - <<'PY'
+import zipfile
+
+files = [
+    "app/calculator.py",
+    "tests/test_calculator.py"
+]
+
+with zipfile.ZipFile(
+    "dist/calculator-package.zip",
+    "w",
+    zipfile.ZIP_DEFLATED
+) as package:
+    for file in files:
+        package.write(file)
+
+print("Application package created.")
+PY
+
+                    ls -lh dist/
+                '''
+            }
+        }
+
+        stage('Archive') {
+            steps {
+                archiveArtifacts(
+                    artifacts: 'dist/calculator-package.zip',
+                    fingerprint: true
+                )
             }
         }
     }
 
     post {
         success {
-            echo 'Pipeline completed successfully.'
+            echo 'Application CI pipeline completed successfully.'
         }
+
         failure {
-            echo 'Pipeline failed. Review the console output.'
+            echo 'Pipeline failed. Check the failed stage and console output.'
         }
+
         always {
-            echo 'Pipeline execution has finished.'
+            echo 'Pipeline execution finished.'
         }
     }
 }
