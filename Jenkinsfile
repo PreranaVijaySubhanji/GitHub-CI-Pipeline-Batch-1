@@ -96,6 +96,24 @@ stage('Docker Image Validation') {
         '''
     }
 }
+        
+stage('Docker Container Smoke Test') {
+    steps {
+        sh '''
+            echo "Starting calculator container..."
+
+            docker run --rm "$IMAGE_TAG" > container-output.txt
+
+            cat container-output.txt
+
+            grep -q "Calculator container is running" container-output.txt
+            grep -q "10 + 5 = 15" container-output.txt
+
+            echo "Container smoke test passed."
+        '''
+    }
+}
+
 
 
         stage('Compile Check') {
