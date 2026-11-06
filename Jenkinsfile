@@ -114,6 +114,35 @@ stage('Docker Container Smoke Test') {
     }
 }
 
+stage('Push Docker Image') {
+    steps {
+        withCredentials([
+            usernamePassword(
+                credentialsId: 'dockerhub-credentials',
+                usernameVariable: 'DOCKERHUB_USERNAME',
+                passwordVariable: 'DOCKERHUB_TOKEN'
+            )
+        ]) {
+            sh '''
+                set +x
+
+                IMAGE_REPO="$DOCKERHUB_USERNAME/batch1-calculator"
+                VERSIONED_IMAGE="$IMAGE_REPO:$BUILD_NUMBER"
+
+                echo "$DOCKERHUB_TOKEN" | docker login \
+                    --username "$DOCKERHUB_USERNAME" \
+                    --password-stdin
+
+                docker tag "$IMAGE_TAG" "$VERSIONED_IMAGE"
+
+                docker push "$VERSIONED_IMAGE"
+
+                docker logout
+            '''
+        }
+    }
+}
+
 
 
         stage('Compile Check') {
