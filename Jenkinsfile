@@ -215,58 +215,60 @@ PY
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Push Docker Image to AWS ECR') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-credentials',
-                        usernameVariable: 'DOCKERHUB_USERNAME',
-                        passwordVariable: 'DOCKERHUB_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        set +x
+                sh '''
+                    set -eu
 
-                        IMAGE_REPO="$DOCKERHUB_USERNAME/batch1-calculator"
+                    echo "Checking AWS CLI..."
+                    aws --version
 
-                        VERSIONED_IMAGE="$IMAGE_REPO:$BUILD_NUMBER"
+                    echo "Checking AWS identity..."
+                    aws sts get-caller-identity
 
-                        echo "Logging in to Docker Hub..."
+                    AWS_REGION="ap-southeast-1"
 
-                        trap 'docker logout >/dev/null 2>&1 || true' EXIT
+                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity \
+                        --query Account \
+                        --output text)
 
-                        echo "$DOCKERHUB_TOKEN" | docker login \
-                            --username "$DOCKERHUB_USERNAME" \
-                            --password-stdin
+                    ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-                        echo "Tagging Docker image..."
+                    ECR_REPOSITORY="batch1-calculator"
 
-                        docker tag "$IMAGE_TAG" "$VERSIONED_IMAGE"
+                    ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER}"
 
-                        echo "Publishing image to Docker Hub..."
+                    echo "AWS account: ${AWS_ACCOUNT_ID}"
+                    echo "AWS region: ${AWS_REGION}"
+                    echo "ECR repository: ${ECR_REPOSITORY}"
+                    echo "Image tag: ${BUILD_NUMBER}"
 
-                        docker push "$VERSIONED_IMAGE"
+                    echo "Authenticating Docker with Amazon ECR..."
 
-                        echo "Docker image published successfully."
-                    '''
-                }
+                    aws ecr get-login-password \
+                        --region "$AWS_REGION" | \
+                        docker login \
+                            --username AWS \
+                            --password-stdin "$ECR_REGISTRY"
+
+                    echo "Tagging the existing Docker image..."
+
+                    docker tag "$IMAGE_TAG" "$ECR_IMAGE"
+
+                    echo "Pushing Docker image to Amazon ECR..."
+
+                    docker push "$ECR_IMAGE"
+
+                    echo "Verifying the image in ECR..."
+
+                    aws ecr describe-images \
+                        --repository-name "$ECR_REPOSITORY" \
+                        --image-ids imageTag="$BUILD_NUMBER" \
+                        --region "$AWS_REGION"
+
+                    echo "Image successfully published and verified in ECR."
+
+                    docker logout "$ECR_REGISTRY" || true
+                '''
             }
         }
-    }
-
-    post {
-        success {
-            echo 'SUCCESS: Application CI pipeline completed successfully.'
-            echo 'Docker image published to Docker Hub.'
-        }
-
-        failure {
-            echo 'FAILURE: Pipeline execution failed.'
-            echo 'Check the failed stage in Console Output.'
-        }
-
-        always {
-            echo 'Pipeline execution finished.'
-        }
-    }
-}
